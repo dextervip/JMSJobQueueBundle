@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types = 1);
-
 namespace JMS\JobQueueBundle\Console;
 
 use JMS\JobQueueBundle\Entity\Job;
@@ -11,7 +9,7 @@ trait ScheduleHourly
 {
     use ScheduleInSecondInterval;
 
-    protected function getScheduleInterval(): int
+    protected function getScheduleInterval()
     {
         return 3600;
     }

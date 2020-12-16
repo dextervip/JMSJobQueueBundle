@@ -19,9 +19,8 @@
 namespace JMS\JobQueueBundle\Tests\Entity;
 
 use JMS\JobQueueBundle\Entity\Job;
-use PHPUnit\Framework\TestCase;
 
-class JobTest extends TestCase
+class JobTest extends \PHPUnit_Framework_TestCase
 {
     public function testConstruct()
     {

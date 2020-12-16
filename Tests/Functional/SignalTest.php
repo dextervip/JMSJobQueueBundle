@@ -4,10 +4,9 @@ namespace JMS\JobQueueBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManager;
 use JMS\JobQueueBundle\Entity\Job;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
-class SignalTest extends TestCase
+class SignalTest extends \PHPUnit_Framework_TestCase
 {
     public function testControlledExit()
     {
@@ -15,7 +14,7 @@ class SignalTest extends TestCase
             $this->markTestSkipped('PCNTL extension is not loaded.');
         }
 
-        $proc = new Process('exec '.PHP_BINARY.' '.escapeshellarg(__DIR__.'/console').' jms-job-queue:run --worker-name=test --verbose --max-runtime=999999');
+        $proc = new Process('exec '.PHP_BINARY.' '.escapeshellarg(__DIR__.'/../consolefolder/console').' jms-job-queue:run --worker-name=test --verbose --max-runtime=999999');
         $proc->start();
 
         usleep(5E5);

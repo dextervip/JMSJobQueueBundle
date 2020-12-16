@@ -24,11 +24,9 @@ Documentation
 
     installation
     usage
-    scheduled_jobs
 
 - :doc:`Installation <installation>`
 - :doc:`Usage <usage>`
-- :doc:`Scheduled/Cron Jobs <scheduled_jobs>`
 
 License
 -------

@@ -2,26 +2,23 @@
 
 namespace JMS\JobQueueBundle\Tests\Functional;
 
-use JMS\JobQueueBundle\Retry\ExponentialRetryScheduler;
-use JMS\JobQueueBundle\Retry\RetryScheduler;
 use JMS\JobQueueBundle\Tests\Functional\TestBundle\Entity\Train;
 
 use JMS\JobQueueBundle\Tests\Functional\TestBundle\Entity\Wagon;
 
-use PHPUnit\Framework\Constraint\LogicalNot;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Doctrine\ORM\EntityManager;
-use JMS\JobQueueBundle\Entity\Repository\JobManager;
+use JMS\JobQueueBundle\Entity\Repository\JobRepository;
 use JMS\JobQueueBundle\Event\StateChangeEvent;
 use JMS\JobQueueBundle\Entity\Job;
 
-class JobManagerTest extends BaseTestCase
+class JobRepositoryTest extends BaseTestCase
 {
     /** @var EntityManager */
     private $em;
 
-    /** @var JobManager */
-    private $jobManager;
+    /** @var JobRepository */
+    private $repo;
 
     /** @var EventDispatcher */
     private $dispatcher;
@@ -34,8 +31,8 @@ class JobManagerTest extends BaseTestCase
         $this->em->persist($a2);
         $this->em->flush();
 
-        $this->assertSame($a, $this->jobManager->getJob('a', array('foo')));
-        $this->assertSame($a2, $this->jobManager->getJob('a'));
+        $this->assertSame($a, $this->repo->getJob('a', array('foo')));
+        $this->assertSame($a2, $this->repo->getJob('a'));
     }
 
     /**
@@ -44,14 +41,14 @@ class JobManagerTest extends BaseTestCase
      */
     public function testGetOneThrowsWhenNotFound()
     {
-        $this->jobManager->getJob('foo');
+        $this->repo->getJob('foo');
     }
 
     public function getOrCreateIfNotExists()
     {
-        $a = $this->jobManager->getOrCreateIfNotExists('a');
-        $this->assertSame($a, $this->jobManager->getOrCreateIfNotExists('a'));
-        $this->assertNotSame($a, $this->jobManager->getOrCreateIfNotExists('a', array('foo')));
+        $a = $this->repo->getOrCreateIfNotExists('a');
+        $this->assertSame($a, $this->repo->getOrCreateIfNotExists('a'));
+        $this->assertNotSame($a, $this->repo->getOrCreateIfNotExists('a', array('foo')));
     }
 
     public function testFindPendingJobReturnsAllDependencies()
@@ -70,7 +67,7 @@ class JobManagerTest extends BaseTestCase
         $this->em->flush();
         $this->em->clear();
 
-        $cReloaded = $this->jobManager->findPendingJob(array($a->getId(), $b->getId()));
+        $cReloaded = $this->repo->findPendingJob(array($a->getId(), $b->getId()));
         $this->assertNotNull($cReloaded);
         $this->assertEquals($c->getId(), $cReloaded->getId());
         $this->assertCount(2, $cReloaded->getDependencies());
@@ -78,7 +75,7 @@ class JobManagerTest extends BaseTestCase
 
     public function testFindPendingJob()
     {
-        $this->assertNull($this->jobManager->findPendingJob());
+        $this->assertNull($this->repo->findPendingJob());
 
         $a = new Job('a');
         $a->setState('running');
@@ -87,13 +84,13 @@ class JobManagerTest extends BaseTestCase
         $this->em->persist($b);
         $this->em->flush();
 
-        $this->assertSame($b, $this->jobManager->findPendingJob());
-        $this->assertNull($this->jobManager->findPendingJob(array($b->getId())));
+        $this->assertSame($b, $this->repo->findPendingJob());
+        $this->assertNull($this->repo->findPendingJob(array($b->getId())));
     }
 
     public function testFindPendingJobInRestrictedQueue()
     {
-        $this->assertNull($this->jobManager->findPendingJob());
+        $this->assertNull($this->repo->findPendingJob());
 
         $a = new Job('a');
         $b = new Job('b', array(), true, 'other_queue');
@@ -101,13 +98,13 @@ class JobManagerTest extends BaseTestCase
         $this->em->persist($b);
         $this->em->flush();
 
-        $this->assertSame($a, $this->jobManager->findPendingJob());
-        $this->assertSame($b, $this->jobManager->findPendingJob(array(), array(), array('other_queue')));
+        $this->assertSame($a, $this->repo->findPendingJob());
+        $this->assertSame($b, $this->repo->findPendingJob(array(), array(), array('other_queue')));
     }
 
     public function testFindStartableJob()
     {
-        $this->assertNull($this->jobManager->findStartableJob('my-name'));
+        $this->assertNull($this->repo->findStartableJob('my-name'));
 
         $a = new Job('a');
         $a->setState('running');
@@ -121,7 +118,7 @@ class JobManagerTest extends BaseTestCase
 
         $excludedIds = array();
 
-        $this->assertSame($c, $this->jobManager->findStartableJob('my-name', $excludedIds));
+        $this->assertSame($c, $this->repo->findStartableJob('my-name', $excludedIds));
         $this->assertEquals(array($b->getId()), $excludedIds);
     }
 
@@ -139,7 +136,7 @@ class JobManagerTest extends BaseTestCase
 
         $this->assertFalse($this->em->contains($b));
 
-        $reloadedB = $this->jobManager->findJobForRelatedEntity('b', $a);
+        $reloadedB = $this->repo->findJobForRelatedEntity('b', $a);
         $this->assertNotNull($reloadedB);
         $this->assertEquals($b->getId(), $reloadedB->getId());
         $this->assertCount(1, $reloadedB->getRelatedEntities());
@@ -159,7 +156,7 @@ class JobManagerTest extends BaseTestCase
         $this->assertTrue($this->em->contains($b));
 
         $excludedIds = array();
-        $startableJob = $this->jobManager->findStartableJob('my-name', $excludedIds);
+        $startableJob = $this->repo->findStartableJob('my-name', $excludedIds);
         $this->assertNotNull($startableJob);
         $this->assertEquals($b->getId(), $startableJob->getId());
         $this->assertEquals(array($a->getId()), $excludedIds);
@@ -186,7 +183,7 @@ class JobManagerTest extends BaseTestCase
 
         $this->assertEquals('running', $a->getState());
         $this->assertEquals('pending', $b->getState());
-        $this->jobManager->closeJob($a, 'terminated');
+        $this->repo->closeJob($a, 'terminated');
         $this->assertEquals('terminated', $a->getState());
         $this->assertEquals('canceled', $b->getState());
     }
@@ -210,7 +207,7 @@ class JobManagerTest extends BaseTestCase
             ->method('dispatch')
             ->with('jms_job_queue.job_state_change', new StateChangeEvent($b, 'canceled'));
 
-        $this->jobManager->closeJob($a, 'canceled');
+        $this->repo->closeJob($a, 'canceled');
         $this->assertEquals('canceled', $a->getState());
         $this->assertCount(0, $a->getRetryJobs());
         $this->assertEquals('canceled', $b->getState());
@@ -230,24 +227,24 @@ class JobManagerTest extends BaseTestCase
             ->with('jms_job_queue.job_state_change', new StateChangeEvent($a, 'failed'));
         $this->dispatcher->expects($this->at(1))
             ->method('dispatch')
-            ->with('jms_job_queue.job_state_change', new LogicalNot($this->equalTo(new StateChangeEvent($a, 'failed'))));
+            ->with('jms_job_queue.job_state_change', new \PHPUnit_Framework_Constraint_Not($this->equalTo(new StateChangeEvent($a, 'failed'))));
         $this->dispatcher->expects($this->at(2))
             ->method('dispatch')
-            ->with('jms_job_queue.job_state_change', new LogicalNot($this->equalTo(new StateChangeEvent($a, 'failed'))));
+            ->with('jms_job_queue.job_state_change', new \PHPUnit_Framework_Constraint_Not($this->equalTo(new StateChangeEvent($a, 'failed'))));
 
         $this->assertCount(0, $a->getRetryJobs());
-        $this->jobManager->closeJob($a, 'failed');
+        $this->repo->closeJob($a, 'failed');
         $this->assertEquals('running', $a->getState());
         $this->assertCount(1, $a->getRetryJobs());
 
         $a->getRetryJobs()->first()->setState('running');
-        $this->jobManager->closeJob($a->getRetryJobs()->first(), 'failed');
+        $this->repo->closeJob($a->getRetryJobs()->first(), 'failed');
         $this->assertCount(2, $a->getRetryJobs());
         $this->assertEquals('failed', $a->getRetryJobs()->first()->getState());
         $this->assertEquals('running', $a->getState());
 
         $a->getRetryJobs()->last()->setState('running');
-        $this->jobManager->closeJob($a->getRetryJobs()->last(), 'terminated');
+        $this->repo->closeJob($a->getRetryJobs()->last(), 'terminated');
         $this->assertCount(2, $a->getRetryJobs());
         $this->assertEquals('terminated', $a->getRetryJobs()->last()->getState());
         $this->assertEquals('terminated', $a->getState());
@@ -292,12 +289,9 @@ class JobManagerTest extends BaseTestCase
         $this->createClient();
         $this->importDatabaseSchema();
 
-        $this->dispatcher = $this->createMock('Symfony\Component\EventDispatcher\EventDispatcherInterface');
-        $this->em = self::$kernel->getContainer()->get('doctrine')->getManagerForClass(Job::class);
-        $this->jobManager = new JobManager(
-            self::$kernel->getContainer()->get('doctrine'),
-            $this->dispatcher,
-            new ExponentialRetryScheduler()
-        );
+        $this->dispatcher = $this->getMock('Symfony\Component\EventDispatcher\EventDispatcherInterface');
+        $this->em = self::$kernel->getContainer()->get('doctrine')->getManagerForClass('JMSJobQueueBundle:Job');
+        $this->repo = $this->em->getRepository('JMSJobQueueBundle:Job');
+        $this->repo->setDispatcher($this->dispatcher);
     }
 }

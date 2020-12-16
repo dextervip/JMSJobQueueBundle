@@ -19,24 +19,24 @@
 namespace JMS\JobQueueBundle\Command;
 
 use Doctrine\ORM\EntityManager;
-use JMS\JobQueueBundle\Entity\Job;
-use JMS\JobQueueBundle\Entity\Repository\JobManager;
-use JMS\JobQueueBundle\Event\NewOutputEvent;
-use JMS\JobQueueBundle\Event\StateChangeEvent;
-use JMS\JobQueueBundle\Exception\InvalidArgumentException;
+use JMS\JobQueueBundle\Entity\Repository\JobRepository;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Bridge\Doctrine\ManagerRegistry;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Process\Exception\ProcessFailedException;
+use JMS\JobQueueBundle\Exception\LogicException;
+use JMS\JobQueueBundle\Exception\InvalidArgumentException;
+use JMS\JobQueueBundle\Event\NewOutputEvent;
+use Symfony\Component\Finder\Finder;
+use Symfony\Component\Process\ProcessBuilder;
 use Symfony\Component\Process\Process;
+use JMS\JobQueueBundle\Entity\Job;
+use JMS\JobQueueBundle\Event\StateChangeEvent;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 
-class RunCommand extends Command
+class RunCommand extends \Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand
 {
-    protected static $defaultName = 'jms-job-queue:run';
-
     /** @var string */
     private $env;
 
@@ -49,10 +49,7 @@ class RunCommand extends Command
     /** @var ManagerRegistry */
     private $registry;
 
-    /** @var JobManager */
-    private $jobManager;
-
-    /** @var EventDispatcherInterface */
+    /** @var EventDispatcher */
     private $dispatcher;
 
     /** @var array */
@@ -61,26 +58,10 @@ class RunCommand extends Command
     /** @var bool */
     private $shouldShutdown = false;
 
-    /** @var array */
-    private $queueOptionsDefault;
-
-    /** @var array */
-    private $queueOptions;
-
-    public function __construct(ManagerRegistry $managerRegistry, JobManager $jobManager, EventDispatcherInterface $dispatcher, array $queueOptionsDefault, array $queueOptions)
-    {
-        parent::__construct();
-
-        $this->registry = $managerRegistry;
-        $this->jobManager = $jobManager;
-        $this->dispatcher = $dispatcher;
-        $this->queueOptionsDefault = $queueOptionsDefault;
-        $this->queueOptions = $queueOptions;
-    }
-
     protected function configure()
     {
         $this
+            ->setName('jms-job-queue:run')
             ->setDescription('Runs jobs from the queue.')
             ->addOption('max-runtime', 'r', InputOption::VALUE_REQUIRED, 'The maximum runtime in seconds.', 900)
             ->addOption('max-concurrent-jobs', 'j', InputOption::VALUE_REQUIRED, 'The maximum number of concurrent jobs.', 4)
@@ -100,7 +81,7 @@ class RunCommand extends Command
         }
 
         if ($maxRuntime > 600) {
-            $maxRuntime += random_int(-120, 120);
+            $maxRuntime += mt_rand(-120, 120);
         }
 
         $maxJobs = (integer) $input->getOption('max-concurrent-jobs');
@@ -131,6 +112,8 @@ class RunCommand extends Command
         $this->env = $input->getOption('env');
         $this->verbose = $input->getOption('verbose');
         $this->output = $output;
+        $this->registry = $this->getContainer()->get('doctrine');
+        $this->dispatcher = $this->getContainer()->get('event_dispatcher');
         $this->getEntityManager()->getConnection()->getConfiguration()->setSQLLogger(null);
 
         if ($this->verbose) {
@@ -146,8 +129,8 @@ class RunCommand extends Command
             $idleTime,
             $maxJobs,
             $restrictedQueues,
-            $this->queueOptionsDefault,
-            $this->queueOptions
+            $this->getContainer()->getParameter('jms_job_queue.queue_options_defaults'),
+            $this->getContainer()->getParameter('jms_job_queue.queue_options')
         );
     }
 
@@ -180,7 +163,7 @@ class RunCommand extends Command
             $this->checkRunningJobs();
             $this->startJobs($workerName, $idleTime, $maxJobs, $restrictedQueues, $queueOptionsDefaults, $queueOptions);
 
-            $waitTimeInMs = random_int(500, 1000);
+            $waitTimeInMs = mt_rand(500, 1000);
             usleep($waitTimeInMs * 1E3);
         }
 
@@ -213,7 +196,7 @@ class RunCommand extends Command
     {
         $excludedIds = array();
         while (count($this->runningJobs) < $maxJobs) {
-            $pendingJob = $this->jobManager->findStartableJob(
+            $pendingJob = $this->getRepository()->findStartableJob(
                 $workerName,
                 $excludedIds,
                 $this->getExcludedQueues($queueOptionsDefaults, $queueOptions, $maxJobs),
@@ -310,7 +293,7 @@ class RunCommand extends Command
                 $data['process']->stop(5);
 
                 $this->output->writeln($data['job'].' terminated; maximum runtime exceeded.');
-                $this->jobManager->closeJob($data['job'], Job::STATE_TERMINATED);
+                $this->getRepository()->closeJob($data['job'], Job::STATE_TERMINATED);
                 unset($this->runningJobs[$i]);
 
                 continue;
@@ -321,9 +304,10 @@ class RunCommand extends Command
                 $data['job']->addOutput($newOutput);
                 $data['job']->addErrorOutput($newErrorOutput);
                 $data['job']->checked();
-                //$em = $this->getEntityManager();
-                //$em->persist($data['job']);
-                //$em->flush($data['job']);
+                $data['job']->updated();
+                $em = $this->getEntityManager();
+                $em->persist($data['job']);
+                $em->flush($data['job']);
 
                 continue;
             }
@@ -340,7 +324,7 @@ class RunCommand extends Command
             $data['job']->setRuntime(time() - $data['start_time']);
 
             $newState = 0 === $data['process']->getExitCode() ? Job::STATE_FINISHED : Job::STATE_FAILED;
-            $this->jobManager->closeJob($data['job'], $newState);
+            $this->getRepository()->closeJob($data['job'], $newState);
             unset($this->runningJobs[$i]);
         }
 
@@ -354,7 +338,7 @@ class RunCommand extends Command
         $newState = $event->getNewState();
 
         if (Job::STATE_CANCELED === $newState) {
-            $this->jobManager->closeJob($job, Job::STATE_CANCELED);
+            $this->getRepository()->closeJob($job, Job::STATE_CANCELED);
 
             return;
         }
@@ -368,15 +352,16 @@ class RunCommand extends Command
         $em->persist($job);
         $em->flush($job);
 
-        $args = $this->getBasicCommandLineArgs();
-        $args[] = $job->getCommand();
-        $args[] = '--jms-job-id='.$job->getId();
+        $pb = $this->getCommandProcessBuilder();
+        $pb
+            ->add($job->getCommand())
+            ->add('--jms-job-id='.$job->getId())
+        ;
 
         foreach ($job->getArgs() as $arg) {
-            $args[] = $arg;
+            $pb->add($arg);
         }
-
-        $proc = new Process($args);
+        $proc = $pb->getProcess();
         $proc->start();
         $this->output->writeln(sprintf('Started %s.', $job));
 
@@ -414,12 +399,16 @@ class RunCommand extends Command
                 continue;
             }
 
-            $args = $this->getBasicCommandLineArgs();
-            $args[] = 'jms-job-queue:mark-incomplete';
-            $args[] = $job->getId();
+            $pb = $this->getCommandProcessBuilder();
+            $pb
+                ->add('jms-job-queue:mark-incomplete')
+                ->add($job->getId())
+                ->add('--env='.$this->env)
+                ->add('--verbose')
+            ;
 
             // We use a separate process to clean up.
-            $proc = new Process($args);
+            $proc = $pb->getProcess();
             if (0 !== $proc->run()) {
                 $ex = new ProcessFailedException($proc);
 
@@ -428,23 +417,47 @@ class RunCommand extends Command
         }
     }
 
-    private function getBasicCommandLineArgs(): array
+    /**
+     * @return ProcessBuilder
+     */
+    private function getCommandProcessBuilder()
     {
-        $args = array(
-            PHP_BINARY,
-            $_SERVER['SYMFONY_CONSOLE_FILE'] ?? $_SERVER['argv'][0],
-            '--env='.$this->env
-        );
+        $pb = new ProcessBuilder();
 
-        if ($this->verbose) {
-            $args[] = '--verbose';
+        // PHP wraps the process in "sh -c" by default, but we need to control
+        // the process directly.
+        if ( ! defined('PHP_WINDOWS_VERSION_MAJOR')) {
+            $pb->add('exec');
         }
 
-        return $args;
+        $console = realpath($_SERVER['SCRIPT_FILENAME']);
+
+        $pb
+            ->add('php')
+            ->add($console)
+            ->add('--env='.$this->env)
+        ;
+
+        if ($this->verbose) {
+            $pb->add('--verbose');
+        }
+
+        return $pb;
     }
 
-    private function getEntityManager(): EntityManager
+    /**
+     * @return EntityManager
+     */
+    private function getEntityManager()
     {
-        return /** @var EntityManager */ $this->registry->getManagerForClass('JMSJobQueueBundle:Job');
+        return $this->registry->getManagerForClass('JMSJobQueueBundle:Job');
+    }
+
+    /**
+     * @return JobRepository
+     */
+    private function getRepository()
+    {
+        return $this->getEntityManager()->getRepository('JMSJobQueueBundle:Job');
     }
 }

@@ -9,8 +9,9 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\Common\Collections\Expr\ClosureExpressionVisitor;
 use Doctrine\Common\Collections\Selectable;
-use Doctrine\Common\Persistence\ManagerRegistry;
 use JMS\JobQueueBundle\Entity\Job;
+use Symfony\Bridge\Doctrine\RegistryInterface;
+use Symfony\Component\Validator\Constraints\Collection as Collection2;
 
 /**
  * Collection for persistent related entities.
@@ -25,7 +26,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
     private $job;
     private $entities;
 
-    public function __construct(ManagerRegistry $registry, Job $job)
+    public function __construct(RegistryInterface $registry, Job $job)
     {
         $this->registry = $registry;
         $this->job = $job;
@@ -365,7 +366,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * a new collection with the elements returned by the function.
      *
      * @param Closure $func
-     * @return Collection
+     * @return Collection2
      */
     public function map(Closure $func)
     {
@@ -379,7 +380,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * The order of the elements is preserved.
      *
      * @param Closure $p The predicate used for filtering.
-     * @return Collection A collection with the results of the filter operation.
+     * @return Collection2 A collection with the results of the filter operation.
      */
     public function filter(Closure $p)
     {
@@ -473,7 +474,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * return a new collection containing these elements.
      *
      * @param  Criteria $criteria
-     * @return Collection
+     * @return Collection2
      */
     public function matching(Criteria $criteria)
     {

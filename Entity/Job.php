@@ -23,12 +23,12 @@ use Doctrine\ORM\Mapping as ORM;
 use JMS\JobQueueBundle\Exception\InvalidStateTransitionException;
 use JMS\JobQueueBundle\Exception\LogicException;
 use Symfony\Component\Debug\Exception\FlattenException;
+use Symfony\Component\HttpKernel\Exception\FlattenException as LegacyFlattenException;
 
 /**
- * @ORM\Entity
+ * @ORM\Entity(repositoryClass = "JMS\JobQueueBundle\Entity\Repository\JobRepository")
  * @ORM\Table(name = "jms_jobs", indexes = {
- *     @ORM\Index("cmd_search_index", columns = {"command"}),
- *     @ORM\Index("sorting_index", columns = {"state", "priority", "id"}),
+ *     @ORM\Index("sorting_index", columns = {"state", "priority", "id"})
  * })
  * @ORM\ChangeTrackingPolicy("DEFERRED_EXPLICIT")
  *
@@ -103,6 +103,9 @@ class Job
 
     /** @ORM\Column(type = "datetime", name="createdAt") */
     private $createdAt;
+
+    /** @ORM\Column(type = "datetime", name="updatedAt") */
+    private $updatedAt;
 
     /** @ORM\Column(type = "datetime", name="startedAt", nullable = true) */
     private $startedAt;
@@ -188,20 +191,6 @@ class Job
         return in_array($state, array(self::STATE_CANCELED, self::STATE_FAILED, self::STATE_INCOMPLETE, self::STATE_TERMINATED), true);
     }
 
-    public static function getStates()
-    {
-        return array(
-            self::STATE_NEW,
-            self::STATE_PENDING,
-            self::STATE_CANCELED,
-            self::STATE_RUNNING,
-            self::STATE_FINISHED,
-            self::STATE_FAILED,
-            self::STATE_TERMINATED,
-            self::STATE_INCOMPLETE
-        );
-    }
-
     public function __construct($command, array $args = array(), $confirmed = true, $queue = self::DEFAULT_QUEUE, $priority = self::PRIORITY_DEFAULT)
     {
         if (trim($queue) === '') {
@@ -217,6 +206,7 @@ class Job
         $this->queue = $queue;
         $this->priority = $priority * -1;
         $this->createdAt = new \DateTime();
+        $this->updatedAt = new \DateTime();
         $this->executeAfter = new \DateTime();
         $this->executeAfter = $this->executeAfter->modify('-1 second');
         $this->dependencies = new ArrayCollection();
@@ -228,6 +218,7 @@ class Job
     {
         $this->state = self::STATE_PENDING;
         $this->createdAt = new \DateTime();
+        $this->updatedAt = new \DateTime();
         $this->startedAt = null;
         $this->checkedAt = null;
         $this->closedAt = null;
@@ -334,12 +325,23 @@ class Job
                 throw new LogicException('The previous cases were exhaustive. Unknown state: '.$this->state);
         }
 
+        $this->updatedAt = new \DateTime();
         $this->state = $newState;
     }
 
     public function getCreatedAt()
     {
         return $this->createdAt;
+    }
+
+    public function updated()
+    {
+        $this->updatedAt = new \DateTime();
+    }
+
+    public function getUpdatedAt()
+    {
+        return $this->updatedAt;
     }
 
     public function getClosedAt()
@@ -390,9 +392,7 @@ class Job
 
     public function addRelatedEntity($entity)
     {
-        if ( ! is_object($entity)) {
-            throw new \RuntimeException(sprintf('$entity must be an object.'));
-        }
+        assert('is_object($entity)');
 
         if ($this->relatedEntities->contains($entity)) {
             return;
@@ -585,8 +585,11 @@ class Job
         return $this->checkedAt;
     }
 
-    public function setStackTrace(FlattenException $ex)
+    public function setStackTrace($ex)
     {
+        if(!$ex instanceof FlattenException && !$ex instanceof LegacyFlattenException) {
+            throw new \InvalidArgumentException(sprintf('Parameter of %s must be an instance of %s or %s.', __METHOD__, FlattenException::class, LegacyFlattenException::class));
+        }
         $this->stackTrace = $ex;
     }
 
