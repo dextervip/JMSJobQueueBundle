@@ -321,9 +321,9 @@ class RunCommand extends Command
                 $data['job']->addOutput($newOutput);
                 $data['job']->addErrorOutput($newErrorOutput);
                 $data['job']->checked();
-                $em = $this->getEntityManager();
-                $em->persist($data['job']);
-                $em->flush($data['job']);
+                //$em = $this->getEntityManager();
+                //$em->persist($data['job']);
+                //$em->flush($data['job']);
 
                 continue;
             }
