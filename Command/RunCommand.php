@@ -303,11 +303,13 @@ class RunCommand extends \Symfony\Bundle\FrameworkBundle\Command\ContainerAwareC
                 // For long running processes, it is nice to update the output status regularly.
                 $data['job']->addOutput($newOutput);
                 $data['job']->addErrorOutput($newErrorOutput);
-                $data['job']->checked();
-                $data['job']->updated();
-                $em = $this->getEntityManager();
-                $em->persist($data['job']);
-                $em->flush($data['job']);
+                if($data['job']->getCheckedAt() == null or (clone $data['job']->getCheckedAt())->modify('+5 minutes') <= new \DateTime()){
+                    $data['job']->checked();
+                    $data['job']->updated();
+                    $em = $this->getEntityManager();
+                    $em->persist($data['job']);
+                    $em->flush($data['job']);
+                }
 
                 continue;
             }
