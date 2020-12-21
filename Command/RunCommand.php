@@ -305,9 +305,9 @@ class RunCommand extends \Symfony\Bundle\FrameworkBundle\Command\ContainerAwareC
                 $data['job']->addErrorOutput($newErrorOutput);
                 $data['job']->checked();
                 $data['job']->updated();
-                //$em = $this->getEntityManager();
-                //$em->persist($data['job']);
-                //$em->flush($data['job']);
+                $em = $this->getEntityManager();
+                $em->persist($data['job']);
+                $em->flush($data['job']);
 
                 continue;
             }
